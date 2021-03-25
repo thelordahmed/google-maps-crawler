@@ -5,8 +5,7 @@ from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as ec
-from selenium.common.exceptions import NoSuchElementException, ElementClickInterceptedException, TimeoutException, \
-    SessionNotCreatedException, WebDriverException
+from selenium.common.exceptions import NoSuchElementException, ElementClickInterceptedException, TimeoutException
 from time import sleep
 import json
 import os
@@ -14,9 +13,9 @@ import csv
 from emailsCrawler import scrape_email
 from wx.adv import HyperlinkCtrl
 import random
-import requests, zipfile, io
 import xpaths as xpaths_module
-
+from webdriver_manager.chrome import ChromeDriverManager
+from platform import system
 
 ######################################################
 ######################################################
@@ -30,13 +29,16 @@ url = "http://www.facebook.com/lord.ahmed110"
 ######################################################
 ######################################################
 
+if system() == "Darwin":
+    data_folder = os.path.join(
+        os.path.expanduser("~"),
+        "Library",
+        "gmapsCrawlerData"
+        )
+else:
+    data_folder = r'C:\ProgramData\GmapsBot'
 
-def chromedriver_update(zip_extract_path):
-    stable_ver = requests.get("https://chromedriver.storage.googleapis.com/LATEST_RELEASE").text
-    file = requests.get(f"https://chromedriver.storage.googleapis.com/{stable_ver}/chromedriver_win32.zip")
-    z = zipfile.ZipFile(io.BytesIO(file.content))
-    z.extractall(zip_extract_path)
-
+os.system(f"mkdir {data_folder}")
 
 
 class Win(wx.Frame):
@@ -86,7 +88,7 @@ class Win(wx.Frame):
         Countries_frame.Add(self.m_staticText2, 0, wx.ALL | wx.ALIGN_CENTER_HORIZONTAL, 5)
         # file picker
         self.m_filePicker1 = wx.FilePickerCtrl(labelframe.GetStaticBox(), wx.ID_ANY, wx.EmptyString, u"Select a file",
-                                               u"*.txt*", wx.DefaultPosition, wx.DefaultSize, wx.FLP_DEFAULT_STYLE)
+                                               u"*.txt", wx.DefaultPosition, wx.DefaultSize, wx.FLP_DEFAULT_STYLE)
         self.m_filePicker1.SetMinSize(wx.Size(250, -1))
         Countries_frame.Add(self.m_filePicker1, 0, wx.ALL | wx.ALIGN_CENTER_HORIZONTAL, 5)
         self.country_status = wx.StaticText(labelframe.GetStaticBox(), wx.ID_ANY, u"Searching in : ",
@@ -190,7 +192,7 @@ class Win(wx.Frame):
         self.searchtext = self.searchquery + " " + self.country.title()
         self.searchplus = self.searchtext.replace(" ", "+")
         self.link = "https://www.google.com/maps/search/" + self.searchplus
-        self.thread = Thread(target=self.run)
+        self.thread = Thread(target=self.run, name="process thread", daemon=True)
         self.clean_categories = []
         # get saved history
         self.data_xpath = {
@@ -255,11 +257,9 @@ class Win(wx.Frame):
         app.ExitMainLoop()
 
     def set_history(self):
-        if os.path.exists(r"C:\ProgramData\GmapsBot\history.json") is False:
-            os.system(r"mkdir C:\ProgramData\GmapsBot")
-        with open(r"C:\ProgramData\GmapsBot\history.json", "w") as f:
+        with open(os.path.join(data_folder, "history.json"), "w") as f:
             info = {
-                "search": self.searchquery,
+                "search": self.m_textCtrl48.GetValue(),
                 "path": self.m_filePicker1.GetPath(),
                 "data": self.data,
                 "urls": self.processed_urls,
@@ -267,12 +267,12 @@ class Win(wx.Frame):
                 "current_status": self.country
             }
             f.write(json.dumps(info))
-        with open(r"C:\ProgramData\GmapsBot\categories.txt", "w", encoding="utf-8") as f:
+        with open(os.path.join(data_folder, "categories.txt"), "w", encoding="utf-8") as f:
             f.write(self.category_ctrl.GetValue())
 
     def get_history(self):
         try:
-            with open(r"C:\ProgramData\GmapsBot\history.json", "r") as f:
+            with open(os.path.join(data_folder, "history.json"), "r") as f:
                 info = f.read()
                 dict_ = json.loads(info)
             self.m_textCtrl48.SetValue(dict_["search"])
@@ -293,7 +293,7 @@ class Win(wx.Frame):
                 self.data_view.SetItem(index, 4, email)
             counter = str(self.data_view.GetItemCount())
             self.counter_int.SetLabel(counter)
-            with open(r"C:\ProgramData\GmapsBot\categories.txt", "r", encoding="utf-8") as f:
+            with open(os.path.join(data_folder, "categories.txt"), "r", encoding="utf-8") as f:
                 self.category_ctrl.SetValue(f.read())
         except Exception:
             pass
@@ -307,11 +307,10 @@ class Win(wx.Frame):
         # cleaning the cateogries list from spaces
         for cat in categories:
             clean_cat = cat.strip()
-            self.clean_categories.append(clean_cat)
+            if clean_cat != '':
+                self.clean_categories.append(clean_cat)
         # save dir check
-        if os.path.exists(r'C:\ProgramData\GmapsBot\history.json') is False:
-            os.system(r"mkdir C:\ProgramData\GmapsBot")
-            self.set_history()
+        self.set_history()
         # get search text
         self.searchquery = self.m_textCtrl48.GetValue()
         # get country list
@@ -351,17 +350,7 @@ class Win(wx.Frame):
         self.Layout()
 
     def open(self):
-        try:
-            self.win = webdriver.Chrome(r"C:\ProgramData\GmapsBot\chromedriver.exe")
-        except SessionNotCreatedException:
-            # print("chromedriver.exe is outdated .. Updating...")
-            chromedriver_update(r"C:\ProgramData\GmapsBot")
-            self.win = webdriver.Chrome(r"C:\ProgramData\GmapsBot\chromedriver.exe")
-        except WebDriverException:
-            # print("chromedriver.exe is outdated .. Updating...")
-            chromedriver_update(r"C:\ProgramData\GmapsBot")
-            sleep(1)
-            self.win = webdriver.Chrome(r"C:\ProgramData\GmapsBot\chromedriver.exe")
+        self.win = webdriver.Chrome(ChromeDriverManager().install())
         self.win.get(self.link)
 
     def data_protection(self):
@@ -410,6 +399,7 @@ class Win(wx.Frame):
             print(len(self.results))
             if len(self.results) == 0:
                 self.win.quit()
+                sleep(5)
                 self.run()
                 self.scrape_data()
 
@@ -429,15 +419,15 @@ class Win(wx.Frame):
                 if self.nextpage() is False:  # next page button not active .. means no more results
                     if self.next_country() is False:
                         break
-                    # print("no more results .. goning to next country")
+                    print("no more results .. goning to next country")
                     continue
             except ElementClickInterceptedException:
                 if self.next_country() is False:
                     break
-                # print("no more results .. goning to next country")
+                print("no more results .. goning to next country")
                 continue
-        # STOP POINT >> what happens when program completes************************************************************
-        self.thread = Thread(target=self.run)
+        # STOP POINT >> what happens when program completes***********************************************************
+        self.thread = Thread(target=self.run,name="Thread" ,daemon=True)
         self.Start_btn.Enable()
         self.set_history()
         try:
@@ -458,7 +448,7 @@ class Win(wx.Frame):
                     # if False returned .. means no more countries
                     if self.next_country() is False:
                         return False
-                    # print("no more results .. goning to next country")
+                    print("no more results .. goning to next country")
                     return True
 
                 ####### SAME BUG FIX START ######
@@ -470,36 +460,29 @@ class Win(wx.Frame):
                           ".//div[@class='section-place-result-container-summary']//div[contains(@class, '__title-container')]/../div[last()]/div[1]/span[2]//span[not(@class)] | .//span[@class='section-result-location']"]
                 res_check_data = []
                 category_path = ".//div[@class='section-place-result-container-summary']//div[contains(@class, '__title-container')]/../div[last()]/div[1]/span[1]//span[not(@style)] | .//span[@class='section-result-details']"
-                # try:
-                #     category = self.results[i].find_element_by_xpath(category_path).text
-                # except NoSuchElementException:
-                #     WebDriverWait(self.win, 10).until(ec.visibility_of_element_located((By.XPATH, category_path)))
-                #     category = self.results[i].find_element_by_xpath(category_path).text
+
                 category = self.results[i].find_element_by_xpath(category_path).text
-                print(category)
 
                 for path in xpaths:
                     try:
                         data = self.results[i].find_element_by_xpath(path).text
                     except NoSuchElementException:
                         data = "None"
+
                     res_check_data.append(data)
                 ############ ALGORITHM : choosing the desired category from results #############
                 # if scraped data from outside (lcoation, title, score, reviews) in the list .. skip before clicking
                 if res_check_data not in self.data["check data"]:
-                    if self.clean_categories != ['']:  # check if the categores ctrl empty or not
-                        if category in self.clean_categories:
-                            pass
-                        else:
-                            # print("not selected category .. moving to next result")
+                    if len(self.clean_categories) != 0:  # check if the categores ctrl empty or not
+                        if category not in self.clean_categories:
+                            print("not selected category")
                             i += 1
                             continue
-                    # print("scraping ", category)
                     self.data["check data"].append(res_check_data)
                     try:
                         self.results[i].click()
                     except ElementClickInterceptedException:
-                        # print("ElementClickInterceptedException .. waiting 10 secs")
+                        print("ElementClickInterceptedException .. waiting 10 secs")
                         sleep(10)
                         self.results[i].click()
                 else:
@@ -511,12 +494,11 @@ class Win(wx.Frame):
                     WebDriverWait(self.win, 10).until(ec.visibility_of_element_located((
                         By.XPATH, self.data_xpath["back"])))
                 except TimeoutException:
-                    # print("the same bug again .. refreshing...")
+                    print("the same bug again .. refreshing...")
                     self.win.get(self.link)
                     return True
 
                 ###### SAME BUG FIX END ######
-
                 # SCRAPING POINT >> scraping data >>>>>>>>>>>>
                 sleep(2)
                 keys = ['name', 'address', 'website']
@@ -531,6 +513,7 @@ class Win(wx.Frame):
                     if website != "No Website":
                         url = "https://www." + website
                         if url not in self.processed_urls:
+                            print("scraping email from " + url)
                             if self.advanced_var is True:
                                 email = scrape_email(url)
                                 if email == "Not Found":
@@ -549,6 +532,7 @@ class Win(wx.Frame):
                     self.data_view.SetItem(index, 2, phone)
                     self.data_view.SetItem(index, 3, website)
                     self.data_view.SetItem(index, 4, email)
+                    self.set_history()
 
                     # updating the counter
                     counter = str(self.data_view.GetItemCount())
@@ -561,7 +545,7 @@ class Win(wx.Frame):
                     WebDriverWait(self.win, 18).until(ec.visibility_of_element_located((
                         By.XPATH, xpaths_module.results)))
                 except TimeoutException:
-                    # print("waited 10 secs . results didn't appear .. clicking back again...")
+                    print("waited 10 secs . results didn't appear .. clicking back again...")
                     try:
                         self.win.find_element_by_xpath(
                             "//div[@id='pane']//button[@class='section-back-to-list-button blue-link noprint']").click()
