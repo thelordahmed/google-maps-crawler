@@ -2,6 +2,7 @@ import wx
 import wx.xrc
 from threading import Thread
 from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as ec
@@ -16,6 +17,7 @@ import random
 import xpaths as xpaths_module
 from webdriver_manager.chrome import ChromeDriverManager
 from platform import system
+from selenium.webdriver import Chrome
 
 ######################################################
 ######################################################
@@ -395,20 +397,23 @@ class Win(wx.Frame):
             # DATA PROTECTION >> the data protection pop up work around .. for Germany and Eu countries
             self.data_protection()
 
-            self.results = self.win.find_elements_by_xpath(xpaths_module.results)
-            print(len(self.results))
-            if len(self.results) == 0:
-                self.win.quit()
-                sleep(5)
-                self.run()
-                self.scrape_data()
 
-            i = 0  # result index in results list
+            self.results = self.win.find_elements_by_xpath(xpaths_module.results)
+
+            while len(self.results) < 20:
+                print(f"results now are {len(self.results)}")
+                self.win: Chrome
+                self.win.execute_script("arguments[0].scrollIntoView();", self.results[-1])
+                self.win.switch_to.window(self.win.current_window_handle)
+                sleep(2)
+                self.results = self.win.find_elements_by_xpath(xpaths_module.results)
+
+
             # if len(self.results) > 20:
             #     i = len(self.results) - 20  # changing the start point after the ads
 
             # FOR LOOP >> the for loop .. it's inside a function to be able to break parent loop
-            loop_return = self.forloop(i)
+            loop_return = self.forloop(self.results)
             if loop_return is False:
                 break
             elif loop_return is True:
@@ -437,141 +442,248 @@ class Win(wx.Frame):
         wx.MessageDialog(None, f"{len(self.data['name'])} results scraped.. Bot Finished succssefully ^_^",
                          "Finished Successfully.", wx.OK | wx.ICON_INFORMATION).ShowModal()
 
-    def forloop(self, i):
-        for _ in range(len(self.results) - i):
-            try:
+    def forloop(self, results):
+        for result in results:
+            # print("can't get the results")
+            # if False returned .. means no more countries
+            # if self.next_country() is False:
+            #     return False
+            ####### SAME BUG FIX START ######
+
+            # getting results data to check before clicking on it to skip faster
+            xpaths = ["..//div[@class='section-place-result-container-summary']//div[contains(@class, '_title-container')]/div/span | .//h3[@class='section-result-title']/span",
+                      "..//div[@class='section-place-result-container-summary']//span[contains(@class,'__rating')] | .//span[@class='cards-rating-score']",
+                      "..//div[@class='section-place-result-container-summary']//span[contains(@class,'__reviews')] | .//span[@class='section-result-num-ratings']",
+                      "..//div[@class='section-place-result-container-summary']//div[contains(@class, '__title-container')]/../div[last()]/div[1]/span[2]//span[not(@class)] | .//span[@class='section-result-location']"]
+            res_check_data = []
+            category_path = "..//div[@class='section-place-result-container-summary']//div[contains(@class, '__title-container')]/../div[last()]/div[1]/span[1]//span[not(@style)] | .//span[@class='section-result-details']"
+            self.win: Chrome
+            self.win.switch_to.window(self.win.current_window_handle)
+            sleep(1)
+            category = result.find_element_by_xpath(category_path).text
+
+            # SCRAPING RESULT DATA
+            for path in xpaths:
                 try:
-                    # sleep(2)
-                    self.results = self.win.find_elements_by_xpath(xpaths_module.results)
+                    data = result.find_element_by_xpath(path).text
                 except NoSuchElementException:
-                    # print("can't get the results")
-                    # if False returned .. means no more countries
-                    if self.next_country() is False:
-                        return False
-                    print("no more results .. goning to next country")
-                    return True
+                    data = "None"
+                res_check_data.append(data)
 
-                ####### SAME BUG FIX START ######
+            ############ ALGORITHM : choosing the desired category from results #############
+            # if scraped data from outside (lcoation, title, score, reviews) in the list .. skip before clicking
+            if res_check_data in self.data["check data"]:
+                # CLOSING THE TAB AND GETTING BACK TO RESULTS TAB
+                if len(self.win.window_handles) > 1:
+                    self.win.close()
+                    self.win.switch_to.window(self.win.window_handles[0])
+                continue
 
-                # getting results data to check before clicking on it to skip faster
-                xpaths = [".//div[@class='section-place-result-container-summary']//div[contains(@class, '_title-container')]/div/span | .//h3[@class='section-result-title']/span",
-                          ".//div[@class='section-place-result-container-summary']//span[contains(@class,'__rating')] | .//span[@class='cards-rating-score']",
-                          ".//div[@class='section-place-result-container-summary']//span[contains(@class,'__reviews')] | .//span[@class='section-result-num-ratings']",
-                          ".//div[@class='section-place-result-container-summary']//div[contains(@class, '__title-container')]/../div[last()]/div[1]/span[2]//span[not(@class)] | .//span[@class='section-result-location']"]
-                res_check_data = []
-                category_path = ".//div[@class='section-place-result-container-summary']//div[contains(@class, '__title-container')]/../div[last()]/div[1]/span[1]//span[not(@style)] | .//span[@class='section-result-details']"
-
-                category = self.results[i].find_element_by_xpath(category_path).text
-
-                for path in xpaths:
-                    try:
-                        data = self.results[i].find_element_by_xpath(path).text
-                    except NoSuchElementException:
-                        data = "None"
-
-                    res_check_data.append(data)
-                ############ ALGORITHM : choosing the desired category from results #############
-                # if scraped data from outside (lcoation, title, score, reviews) in the list .. skip before clicking
-                if res_check_data not in self.data["check data"]:
-                    if len(self.clean_categories) != 0:  # check if the categores ctrl empty or not
-                        if category not in self.clean_categories:
-                            print("not selected category")
-                            i += 1
-                            continue
-                    self.data["check data"].append(res_check_data)
-                    try:
-                        self.results[i].click()
-                    except ElementClickInterceptedException:
-                        print("ElementClickInterceptedException .. waiting 10 secs")
-                        sleep(10)
-                        self.results[i].click()
-                else:
-                    i += 1
+            if len(self.clean_categories) != 0:  # check if the categores ctrl empty or not
+                if category not in self.clean_categories:
+                    print("not selected category")
+                    # CLOSING THE TAB AND GETTING BACK TO RESULTS TAB
+                    if len(self.win.window_handles) > 1:
+                        self.win.close()
+                        self.win.switch_to.window(self.win.window_handles[0])
                     continue
+            self.data["check data"].append(res_check_data)
 
-                # waiting for place info to appear
-                try:
-                    WebDriverWait(self.win, 10).until(ec.visibility_of_element_located((
-                        By.XPATH, self.data_xpath["back"])))
-                except TimeoutException:
-                    print("the same bug again .. refreshing...")
-                    self.win.get(self.link)
-                    return True
+            # OPENING RESULT IN A NEW TAB
+            result_url = result.get_attribute("href")
+            self.win.execute_script("window.open('');")
+            sleep(2)
+            self.win.switch_to.window(self.win.window_handles[-1])  # SWITCHING TO THE NEW TAB
+            self.win.get(result_url)
 
-                ###### SAME BUG FIX END ######
-                # SCRAPING POINT >> scraping data >>>>>>>>>>>>
-                sleep(2)
-                keys = ['name', 'address', 'website']
-                phone = self.get_data("phone")
-                website = self.get_data(keys[2])  # to get the email .. it's appended in the for loop
-                # adding the data structure
-                if phone not in self.data["phone"]:
-                    for key in keys:
-                        value = self.get_data(key)
-                        self.data[key].append(value)
-                    # Email scrape
-                    if website != "No Website":
-                        url = "https://www." + website
-                        if url not in self.processed_urls:
-                            print("scraping email from " + url)
-                            if self.advanced_var is True:
-                                email = scrape_email(url)
-                                if email == "Not Found":
-                                    email = scrape_email(url, True)
-                            else:
-                                email = scrape_email(url)
-                            self.processed_urls.append(url)
+            # waiting for place info to appear
+            try:
+                WebDriverWait(self.win, 20).until(ec.visibility_of_element_located((
+                    By.XPATH, xpaths_module.details_page_loader)))
+            except TimeoutException:
+                return True
+
+            ###### SAME BUG FIX END ######
+            # SCRAPING POINT >> scraping data >>>>>>>>>>>>
+            sleep(2)
+            keys = ['name', 'address', 'website']
+            phone = self.get_data("phone")
+            website = self.get_data(keys[2])  # to get the email .. it's appended in the for loop
+            # adding the data structure
+            if phone not in self.data["phone"]:
+                for key in keys:
+                    value = self.get_data(key)
+                    self.data[key].append(value)
+                # Email scrape
+                if website != "No Website":
+                    url = "https://www." + website
+                    if url not in self.processed_urls:
+                        print("scraping email from " + url)
+                        if self.advanced_var is True:
+                            email = scrape_email(url)
+                            if email == "Not Found":
+                                email = scrape_email(url, True)
                         else:
-                            email = "Same website"
+                            email = scrape_email(url)
+                        self.processed_urls.append(url)
                     else:
-                        email = "Not Found"
-                    self.data["email"].append(email)
-                    self.data["phone"].append(phone)
-                    index = self.data_view.InsertItem(0, self.get_data(keys[0]))
-                    self.data_view.SetItem(index, 1, self.get_data(keys[1]))
-                    self.data_view.SetItem(index, 2, phone)
-                    self.data_view.SetItem(index, 3, website)
-                    self.data_view.SetItem(index, 4, email)
-                    self.set_history()
+                        email = "Same website"
+                else:
+                    email = "Not Found"
+                self.data["email"].append(email)
+                self.data["phone"].append(phone)
+                index = self.data_view.InsertItem(0, self.get_data(keys[0]))
+                self.data_view.SetItem(index, 1, self.get_data(keys[1]))
+                self.data_view.SetItem(index, 2, phone)
+                self.data_view.SetItem(index, 3, website)
+                self.data_view.SetItem(index, 4, email)
+                self.set_history()
 
-                    # updating the counter
-                    counter = str(self.data_view.GetItemCount())
-                    self.counter_int.SetLabel(counter)
-                # back to results
-                self.win.find_element_by_xpath(self.data_xpath["back"]).click()
-                # waiting for results to appear
-                try:
-                    sleep(1)
-                    WebDriverWait(self.win, 18).until(ec.visibility_of_element_located((
-                        By.XPATH, xpaths_module.results)))
-                except TimeoutException:
-                    print("waited 10 secs . results didn't appear .. clicking back again...")
-                    try:
-                        self.win.find_element_by_xpath(
-                            "//div[@id='pane']//button[@class='section-back-to-list-button blue-link noprint']").click()
-                        sleep(1)
-                        WebDriverWait(self.win, 18).until(ec.visibility_of_element_located((
-                            By.XPATH, xpaths_module.results)))
-                        sleep(1)
-                    except NoSuchElementException:
-                        try:
-                            # print('back btn not found .. clicking again with javascript')
-                            self.win.execute_script(
-                                'document.querySelector("#pane > div > div.widget-pane-content.scrollable-y > div > div > button").click()')
-                        except Exception:
-                            # print("back button not found .. moving to next country!")
-                            if self.next_country() is False:
-                                return False
-                            # print("no more results .. goning to next country")
-                            return True
-                    except TimeoutException:
-                        # print("clicking back failed .. refreshing...")
-                        self.win.get(self.link)
-                        return True
-                i += 1
-            except TimeoutError as e:
-                print(e)
-                return False
+                # updating the counter
+                counter = str(self.data_view.GetItemCount())
+                self.counter_int.SetLabel(counter)
+            # CLOSING THE TAB AND GETTING BACK TO RESULTS TAB
+            self.win.close()
+            self.win.switch_to.window(self.win.window_handles[0])
+
+    # def forloop(self, i):
+    #     for _ in range(len(self.results) - i):
+    #         try:
+    #             try:
+    #                 # sleep(2)
+    #                 self.results = self.win.find_elements_by_xpath(xpaths_module.results)
+    #             except NoSuchElementException:
+    #                 # print("can't get the results")
+    #                 # if False returned .. means no more countries
+    #                 if self.next_country() is False:
+    #                     return False
+    #                 print("no more results .. goning to next country")
+    #                 return True
+    #
+    #             ####### SAME BUG FIX START ######
+    #
+    #             # getting results data to check before clicking on it to skip faster
+    #             xpaths = ["..//div[@class='section-place-result-container-summary']//div[contains(@class, '_title-container')]/div/span | .//h3[@class='section-result-title']/span",
+    #                       "..//div[@class='section-place-result-container-summary']//span[contains(@class,'__rating')] | .//span[@class='cards-rating-score']",
+    #                       "..//div[@class='section-place-result-container-summary']//span[contains(@class,'__reviews')] | .//span[@class='section-result-num-ratings']",
+    #                       "..//div[@class='section-place-result-container-summary']//div[contains(@class, '__title-container')]/../div[last()]/div[1]/span[2]//span[not(@class)] | .//span[@class='section-result-location']"]
+    #             res_check_data = []
+    #             category_path = "..//div[@class='section-place-result-container-summary']//div[contains(@class, '__title-container')]/../div[last()]/div[1]/span[1]//span[not(@style)] | .//span[@class='section-result-details']"
+    #             self.win: Chrome
+    #             self.win.switch_to.window(self.win.current_window_handle)
+    #             sleep(1)
+    #             category = self.results[i].find_element_by_xpath(category_path).text
+    #
+    #             for path in xpaths:
+    #                 try:
+    #                     data = self.results[i].find_element_by_xpath(path).text
+    #                 except NoSuchElementException:
+    #                     data = "None"
+    #
+    #                 res_check_data.append(data)
+    #                 print(res_check_data)
+    #             ############ ALGORITHM : choosing the desired category from results #############
+    #             # if scraped data from outside (lcoation, title, score, reviews) in the list .. skip before clicking
+    #             if res_check_data not in self.data["check data"]:
+    #                 if len(self.clean_categories) != 0:  # check if the categores ctrl empty or not
+    #                     if category not in self.clean_categories:
+    #                         print("not selected category")
+    #                         i += 1
+    #                         continue
+    #                 self.data["check data"].append(res_check_data)
+    #                 try:
+    #                     self.results[i].click()
+    #                 except ElementClickInterceptedException:
+    #                     print("ElementClickInterceptedException .. waiting 10 secs")
+    #                     sleep(10)
+    #                     self.results[i].click()
+    #             else:
+    #                 i += 1
+    #                 continue
+    #
+    #             # waiting for place info to appear
+    #             try:
+    #                 WebDriverWait(self.win, 10).until(ec.visibility_of_element_located((
+    #                     By.XPATH, self.data_xpath["back"])))
+    #             except TimeoutException:
+    #                 print("the same bug again .. refreshing...")
+    #                 self.win.get(self.link)
+    #                 return True
+    #
+    #             ###### SAME BUG FIX END ######
+    #             # SCRAPING POINT >> scraping data >>>>>>>>>>>>
+    #             sleep(2)
+    #             keys = ['name', 'address', 'website']
+    #             phone = self.get_data("phone")
+    #             website = self.get_data(keys[2])  # to get the email .. it's appended in the for loop
+    #             # adding the data structure
+    #             if phone not in self.data["phone"]:
+    #                 for key in keys:
+    #                     value = self.get_data(key)
+    #                     self.data[key].append(value)
+    #                 # Email scrape
+    #                 if website != "No Website":
+    #                     url = "https://www." + website
+    #                     if url not in self.processed_urls:
+    #                         print("scraping email from " + url)
+    #                         if self.advanced_var is True:
+    #                             email = scrape_email(url)
+    #                             if email == "Not Found":
+    #                                 email = scrape_email(url, True)
+    #                         else:
+    #                             email = scrape_email(url)
+    #                         self.processed_urls.append(url)
+    #                     else:
+    #                         email = "Same website"
+    #                 else:
+    #                     email = "Not Found"
+    #                 self.data["email"].append(email)
+    #                 self.data["phone"].append(phone)
+    #                 index = self.data_view.InsertItem(0, self.get_data(keys[0]))
+    #                 self.data_view.SetItem(index, 1, self.get_data(keys[1]))
+    #                 self.data_view.SetItem(index, 2, phone)
+    #                 self.data_view.SetItem(index, 3, website)
+    #                 self.data_view.SetItem(index, 4, email)
+    #                 self.set_history()
+    #
+    #                 # updating the counter
+    #                 counter = str(self.data_view.GetItemCount())
+    #                 self.counter_int.SetLabel(counter)
+    #             # back to results
+    #             self.win.find_element_by_xpath(self.data_xpath["back"]).click()
+    #             # waiting for results to appear
+    #             try:
+    #                 sleep(1)
+    #                 WebDriverWait(self.win, 18).until(ec.visibility_of_element_located((
+    #                     By.XPATH, xpaths_module.results)))
+    #             except TimeoutException:
+    #                 print("waited 10 secs . results didn't appear .. clicking back again...")
+    #                 try:
+    #                     self.win.find_element_by_xpath(
+    #                         "//div[@id='pane']//button[@class='section-back-to-list-button blue-link noprint']").click()
+    #                     sleep(1)
+    #                     WebDriverWait(self.win, 18).until(ec.visibility_of_element_located((
+    #                         By.XPATH, xpaths_module.results)))
+    #                     sleep(1)
+    #                 except NoSuchElementException:
+    #                     try:
+    #                         # print('back btn not found .. clicking again with javascript')
+    #                         self.win.execute_script(
+    #                             'document.querySelector("#pane > div > div.widget-pane-content.scrollable-y > div > div > button").click()')
+    #                     except Exception:
+    #                         # print("back button not found .. moving to next country!")
+    #                         if self.next_country() is False:
+    #                             return False
+    #                         # print("no more results .. goning to next country")
+    #                         return True
+    #                 except TimeoutException:
+    #                     # print("clicking back failed .. refreshing...")
+    #                     self.win.get(self.link)
+    #                     return True
+    #             i += 1
+    #         except TimeoutError as e:
+    #             print(e)
+    #             return False
 
     def nextpage(self):
         try:
